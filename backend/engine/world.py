@@ -289,6 +289,9 @@ class WorldAuthority:
             company = w.companies.get(emp.company_id)
             if not company or company.status != CompanyStatus.ACTIVE:
                 continue
+            if not getattr(agent, "alive", True):
+                emp.active = False
+                continue
             if agent.health != HealthStatus.HEALTHY:
                 w.emit("sick_day", f"{agent.name} missed work (sick)", {"agent_id": agent.id})
                 agent.remember(w.tick, "Missed work due to illness", 0.6)
@@ -314,16 +317,26 @@ class WorldAuthority:
     def sell_goods_simple(self) -> None:
         """Consumers with cash buy from companies with inventory (simple clearing)."""
         w = self.w
-        buyers = [a for a in w.agents.values() if a.role in ("worker", "journalist", "lawyer", "banker", "entrepreneur")]
+        energy = float(w.config.get("markets", {}).get("energy_price_index", 100.0))
+        buyers = [
+            a
+            for a in w.agents.values()
+            if getattr(a, "alive", True)
+            and a.role
+            in ("worker", "journalist", "lawyer", "banker", "entrepreneur", "trader", "vc")
+        ]
         for co in w.companies.values():
             if co.inventory_units <= 0 or co.status != CompanyStatus.ACTIVE:
                 continue
             price = co.product_price_cents
+            if co.sector != "energy":
+                price = int(price * (0.85 + 0.15 * (energy / 100.0)))
+            else:
+                price = int(co.product_price_cents * (energy / 100.0))
             for buyer in buyers:
                 if co.inventory_units <= 0:
                     break
                 bal = w.ledger.get(buyer.cash_account_id).balance_cents
-                # spend up to 5% of cash or 1 unit
                 if bal < price:
                     continue
                 if w.rng.random() > 0.35:
@@ -633,6 +646,26 @@ class WorldAuthority:
                     a.health = HealthStatus.SICK
                     a.sick_days_remaining = int(params.get("days", 3))
             w.emit("shock", f"Illness wave rate={rate}", shock.to_dict())
+        elif shock_type == "energy_spike":
+            pct = float(params.get("pct", 40))
+            markets = w.config.setdefault("markets", {})
+            old_e = float(markets.get("energy_price_index", 100.0))
+            markets["energy_price_index"] = old_e * (1.0 + pct / 100.0)
+            w.emit(
+                "shock",
+                f"Energy price index {old_e:.1f}→{markets['energy_price_index']:.1f} (+{pct}%)",
+                shock.to_dict(),
+            )
+        elif shock_type == "energy_drop":
+            pct = float(params.get("pct", 20))
+            markets = w.config.setdefault("markets", {})
+            old_e = float(markets.get("energy_price_index", 100.0))
+            markets["energy_price_index"] = max(20.0, old_e * (1.0 - pct / 100.0))
+            w.emit(
+                "shock",
+                f"Energy price index {old_e:.1f}→{markets['energy_price_index']:.1f} (-{pct}%)",
+                shock.to_dict(),
+            )
         elif shock_type == "cash_grant":
             amount = int(params.get("amount_cents", 100000))
             # Mint from fed settlement if present; else skip conservation-breaking
@@ -640,6 +673,8 @@ class WorldAuthority:
             if not fed:
                 return Reject("no fed for grant")
             for a in w.agents.values():
+                if not getattr(a, "alive", True):
+                    continue
                 try:
                     w.ledger.transfer(
                         fed["cash_account_id"],
@@ -690,7 +725,11 @@ class World:
         path = Path(path)
         with path.open("r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
-        world = cls(config, seed=seed)
+        seed_val = seed if seed is not None else int(config.get("seed", 42))
+        from .population import expand_config_agents
+
+        config = expand_config_agents(config, seed_val)
+        world = cls(config, seed=seed_val)
         world.seed_from_config()
         return world
 
@@ -755,6 +794,26 @@ class World:
                 "cash_account_id": vc_cash.id,
             }
 
+        # Treasury / government
+        treas_cfg = cfg.get("institutions", {}).get("treasury")
+        if treas_cfg:
+            t_cash = self.ledger.create_account(
+                "institution",
+                treas_cfg["id"],
+                f"{treas_cfg['name']} Treasury",
+                int(endowments.get("treasury_capital", 200_000_000)),
+            )
+            self.institutions["treasury"] = {
+                "id": treas_cfg["id"],
+                "name": treas_cfg["name"],
+                "cash_account_id": t_cash.id,
+            }
+
+        # Markets defaults
+        self.config.setdefault("markets", {})
+        self.config["markets"].setdefault("energy_price_index", 100.0)
+        self.config.setdefault("politics", {"ruling_bloc": "center"})
+
         role_goals = {
             "entrepreneur": ["found a company", "raise capital", "hire talent", "grow revenue", "consider IPO"],
             "worker": ["find a good job", "earn wages", "stay healthy", "maybe invest savings"],
@@ -789,6 +848,9 @@ class World:
                 persona=persona,
                 cash_account_id=cash.id,
                 company_name_pref=str(adef.get("company_name", "")),
+                age=int(adef.get("age", 35)),
+                sector_pref=str(adef.get("sector_pref", "tech")),
+                alive=True,
             )
             agent.goals = list(role_goals.get(role, ["survive", "prosper"]))
             self.agents[agent.id] = agent
@@ -802,6 +864,8 @@ class World:
         dmin = int(self.config["policy"]["sick_days_min"])
         dmax = int(self.config["policy"]["sick_days_max"])
         for agent in self.agents.values():
+            if not getattr(agent, "alive", True):
+                continue
             if agent.health == HealthStatus.SICK:
                 agent.sick_days_remaining -= 1
                 if agent.sick_days_remaining <= 0:
@@ -820,16 +884,20 @@ class World:
                 )
 
     def snapshot_metrics(self) -> dict[str, Any]:
+        from .macro import compute_macro
+
         unemployed = sum(
             1
             for a in self.agents.values()
-            if a.role == "worker" and not a.employer_company_id
+            if a.role == "worker" and getattr(a, "alive", True) and not a.employer_company_id
         )
-        workers = sum(1 for a in self.agents.values() if a.role == "worker")
-        sick = sum(1 for a in self.agents.values() if a.health == HealthStatus.SICK)
+        workers = sum(1 for a in self.agents.values() if a.role == "worker" and getattr(a, "alive", True))
+        sick = sum(1 for a in self.agents.values() if getattr(a, "alive", True) and a.health == HealthStatus.SICK)
         loans_out = sum(l.remaining_cents for l in self.loans.values() if l.status == LoanStatus.ACTIVE)
         agent_cash = sum(
-            self.ledger.get(a.cash_account_id).balance_cents for a in self.agents.values()
+            self.ledger.get(a.cash_account_id).balance_cents
+            for a in self.agents.values()
+            if getattr(a, "alive", True)
         )
         company_cash = sum(
             self.ledger.get(c.cash_account_id).balance_cents for c in self.companies.values()
@@ -840,10 +908,7 @@ class World:
         index = 0
         if listings:
             index = int(sum(L.last_price_cents for L in listings) / len(listings))
-        avg_opinion = 0.0
-        if self.agents:
-            avg_opinion = sum(a.opinion_economy for a in self.agents.values()) / len(self.agents)
-        m = {
+        base = {
             "tick": self.tick,
             "seed": self.seed,
             "paused": self.paused,
@@ -869,11 +934,18 @@ class World:
             "equity_index_cents": index,
             "trades_today": self.metrics.get("trades_today", 0),
             "trade_notional_cents_today": self.metrics.get("trade_notional_cents_today", 0),
-            "avg_opinion_economy": round(avg_opinion, 3),
+            "ruling_bloc": (self.config.get("politics") or {}).get("ruling_bloc", "center"),
         }
-        self.metrics = m
-        self.metrics_history.append(dict(m))
-        return m
+        self.metrics = base
+        macro = compute_macro(self)
+        base.update(macro)
+        base["employed_workers"] = macro.get("employed_workers", base["employed_workers"])
+        base["unemployed_workers"] = macro.get("unemployed_workers", base["unemployed_workers"])
+        base["equity_index_cents"] = macro.get("equity_index_cents", index)
+        base["avg_opinion_economy"] = macro.get("avg_opinion_economy", 0.0)
+        self.metrics = base
+        self.metrics_history.append(dict(base))
+        return base
 
     def assert_invariants(self) -> None:
         self.ledger.assert_balanced()
@@ -884,6 +956,8 @@ class World:
             "paused": self.paused,
             "seed": self.seed,
             "phase": self.config.get("phase", "1"),
+            "politics": self.config.get("politics", {}),
+            "markets_cfg": self.config.get("markets", {}),
             "metrics": self.metrics,
             "agents": [
                 a.to_public_dict()

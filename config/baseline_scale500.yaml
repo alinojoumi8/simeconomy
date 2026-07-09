@@ -1,5 +1,5 @@
 # Calibrated Synthetic US-like baseline (CS-US) — Phase 1
-name: csus_full
+name: csus_scale500
 phase: "3"
 seed: 42
 tick_unit: day
@@ -25,8 +25,8 @@ policy:
 
 population:
   # expand named seed cast to this many agents (workers auto-generated)
-  target_agents: 100
-  worker_daily_sample: 0.35   # scale-friendly scheduling
+  target_agents: 500
+  worker_daily_sample: 0.15   # scale-friendly scheduling
 
 lifecycle:
   enabled: true

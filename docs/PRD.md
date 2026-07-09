@@ -108,16 +108,16 @@ Macro strip, agent inspector, news, shock console, event log, export
 
 ## 7. Phased Roadmap
 
-### Phase 0 — Money is real (current)
+### Phase 0 — Money is real ✅
 5–8 agents; bank; company; labor + simple goods; ledger; loan; hire; journalist; sickness; CLI + minimal web; 14-day demo.
 
-### Phase 1 — Society skeleton
+### Phase 1 — Society skeleton ✅
 20–30 agents; full memory; VC pitch; stock book; multi-provider + local; richer dashboard; 30-day runs.
 
-### Phase 2 — 100 agents CS-US
+### Phase 2 — 100 agents CS-US ✅
 Calibrated baseline; multi-sector; shocks; research exports; 90-day runs.
 
-### Phase 3 — Scale & depth
+### Phase 3 — Scale & depth ✅
 500–1000+; birth/death; housing; elections; calibration studies.
 
 ---

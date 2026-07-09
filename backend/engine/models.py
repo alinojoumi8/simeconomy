@@ -81,9 +81,16 @@ class Agent:
     last_reflection_tick: int = -999
     opinion_economy: float = 0.0  # -1..1 from news/experience
     company_name_pref: str = ""
+    alive: bool = True
+    age: int = 35
+    sector_pref: str = "tech"
 
     def is_working_today(self) -> bool:
-        return self.health == HealthStatus.HEALTHY and self.employer_company_id is not None
+        return (
+            self.alive
+            and self.health == HealthStatus.HEALTHY
+            and self.employer_company_id is not None
+        )
 
     def remember(self, tick: int, content: str, importance: float = 0.5, kind: str = "episodic") -> None:
         self.memories.append(MemoryItem(tick=tick, content=content, importance=importance, kind=kind))
@@ -126,6 +133,9 @@ class Agent:
             "opinion_economy": self.opinion_economy,
             "last_reflection_tick": self.last_reflection_tick,
             "latest_reflection": self.reflections[-1].content if self.reflections else None,
+            "alive": self.alive,
+            "age": self.age,
+            "sector_pref": self.sector_pref,
         }
 
 

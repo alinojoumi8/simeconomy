@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--config", type=str, default=str(ROOT / "config" / "baseline_csus.yaml"))
     parser.add_argument("--llm", action="store_true", help="Enable LLM if keys configured")
     parser.add_argument("--json-out", type=str, default="")
+    parser.add_argument("--export", type=str, default="", help="export research dir")
     args = parser.parse_args()
 
     orch = SimulationOrchestrator(args.config, seed=args.seed, use_llm=args.llm)
@@ -38,6 +39,7 @@ def main() -> None:
     print(f"Sick: {m['sick_agents']}  Inventory: {m['inventory_units']}")
     print(f"Equity index: ${m.get('equity_index_cents', 0)/100:,.2f}  Trades today: {m.get('trades_today', 0)}")
     print(f"Avg opinion: {m.get('avg_opinion_economy')}  News: {m['news_count']}")
+    print(f"GDP proxy: ${m.get('gdp_proxy_cents',0)/100:,.0f}  CPI: {m.get('cpi')}  U: {m.get('unemployment_rate')}  Gini: {m.get('gini_cash')}")
     print(f"Total money (invariant): ${m['total_money_cents']/100:,.2f}")
     print("Companies:")
     for c in state.get("companies", []):
@@ -58,6 +60,9 @@ def main() -> None:
     reflected = sum(1 for a in state["agents"] if a.get("reflection_count", 0) > 0)
     print(f"Agents with reflections: {reflected}/{len(state['agents'])}")
 
+    if args.export:
+        paths = orch.export_research(args.export)
+        print("Exported:", paths)
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(state, indent=2), encoding="utf-8")
         print("Wrote", args.json_out)

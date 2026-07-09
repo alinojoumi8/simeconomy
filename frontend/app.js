@@ -19,7 +19,14 @@ function renderCards(m) {
   const items = [
     ["Day", m.tick],
     ["Agents", m.agent_count ?? "—"],
+    ["Alive", m.population_alive ?? m.agent_count ?? "—"],
     ["Policy rate", `${(m.policy_rate_bps / 100).toFixed(2)}%`],
+    ["GDP proxy", money(m.gdp_proxy_cents ?? 0)],
+    ["CPI", m.cpi ?? "—"],
+    ["U-rate", m.unemployment_rate ?? "—"],
+    ["Energy idx", m.energy_price_index ?? "—"],
+    ["Gini", m.gini_cash ?? "—"],
+    ["Ruling", m.ruling_bloc ?? "—"],
     ["Agent cash", money(m.agent_cash_cents)],
     ["Company cash", money(m.company_cash_cents)],
     ["Loans out", money(m.loans_outstanding_cents)],
@@ -27,10 +34,8 @@ function renderCards(m) {
     ["VC funded", m.vc_funded ?? 0],
     ["Listings", m.listings ?? 0],
     ["Equity idx", money(m.equity_index_cents ?? 0)],
-    ["Trades today", m.trades_today ?? 0],
     ["Employed", m.employed_workers],
     ["Unemployed", m.unemployed_workers],
-    ["Sick", m.sick_agents],
     ["Opinion", m.avg_opinion_economy ?? 0],
     ["Total money", money(m.total_money_cents)],
   ];
@@ -228,8 +233,13 @@ $("#btnReset").onclick = async () => {
 };
 $("#btnShock").onclick = async () => {
   const type = $("#shockType").value;
-  const params =
-    type === "illness_wave" ? { rate: 0.6, days: 2 } : type === "rate_hike" ? { bps: 50 } : { bps: 25 };
+  let params = {};
+  if (type === "illness_wave") params = { rate: 0.6, days: 2 };
+  else if (type === "rate_hike") params = { bps: 50 };
+  else if (type === "rate_cut") params = { bps: 25 };
+  else if (type === "energy_spike") params = { pct: 40 };
+  else if (type === "energy_drop") params = { pct: 20 };
+  else if (type === "cash_grant") params = { amount_cents: 50000 };
   await api("/shock", { method: "POST", body: JSON.stringify({ type, params }) });
   await refresh();
 };

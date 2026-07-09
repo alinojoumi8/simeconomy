@@ -13,6 +13,8 @@ class RulePolicy:
     """Deterministic persona scripts so Phase 1 runs without APIs."""
 
     def decide(self, world: World, agent: Agent) -> list[dict[str, Any]]:
+        if not getattr(agent, "alive", True):
+            return [{"tool": "noop", "args": {"reason": "deceased"}}]
         if agent.health == HealthStatus.SICK:
             return [{"tool": "noop", "args": {"reason": "sick"}}]
 
@@ -123,12 +125,12 @@ class RulePolicy:
                     }
                 ]
 
-        # IPO after funding + employees + inventory
+        # IPO after funding + employees (inventory not required — may sell out same day)
         if (
             not co.listed_symbol
             and funded
             and len(employed_here) >= 1
-            and co.inventory_units >= 4
+            and co.vc_raised_cents > 0
             and tick >= 12
         ):
             symbol = "NSTR" if "Northstar" in co.name else co.name[:4].upper()

@@ -20,8 +20,8 @@ FRONTEND = ROOT / "frontend"
 
 app = FastAPI(
     title="SimEconomy",
-    version="0.2.0",
-    description="Multi-agent economic simulator — Phase 1",
+    version="1.0.0",
+    description="Multi-agent economic simulator — Phases 0–3 complete",
 )
 orch = SimulationOrchestrator(CONFIG, use_llm=False)
 
@@ -72,7 +72,7 @@ class AutoBody(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "0.2.0", "phase": "1"}
+    return {"status": "ok", "version": "1.0.0", "phase": str(orch.world.config.get("phase", "3"))}
 
 
 @app.get("/state")
@@ -128,6 +128,17 @@ def vc_deals() -> list[dict[str, Any]]:
 @app.get("/metrics/history")
 def metrics_history(limit: int = 90) -> list[dict[str, Any]]:
     return orch.world.metrics_history[-limit:]
+
+
+
+class ExportBody(BaseModel):
+    out_dir: str = "exports/latest"
+
+
+@app.post("/export")
+def export_research(body: ExportBody | None = None) -> dict[str, Any]:
+    out = body.out_dir if body else "exports/latest"
+    return orch.export_research(out)
 
 
 @app.post("/pause")

@@ -1,4 +1,4 @@
-"""Simulation tick loop with pause/resume/step."""
+"""Simulation tick loop with pause/resume/step + Phase 2/3 systems."""
 
 from __future__ import annotations
 
@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from backend.agents.runtime import AgentRuntime
+from backend.engine.export import export_events_csv, export_metrics_csv, export_run_json
+from backend.engine.lifecycle import process_lifecycle
+from backend.engine.policy import (
+    apply_fed_taylor_step,
+    collect_simple_tax,
+    pay_unemployment_benefits,
+    run_election_if_due,
+)
 from backend.engine.world import World
 from backend.llm.router import LLMRouter
 
@@ -60,6 +68,58 @@ class SimulationOrchestrator:
                 return result.to_dict()
             return result
 
+    def export_research(self, out_dir: str | Path) -> dict[str, str]:
+        out = Path(out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        paths = {
+            "metrics_csv": str(export_metrics_csv(self.world, out / "metrics.csv")),
+            "events_csv": str(export_events_csv(self.world, out / "events.csv")),
+            "run_json": str(export_run_json(self.world, out / "run_summary.json", include_agents=False)),
+        }
+        return paths
+
+    def _active_agents_today(self) -> list[str]:
+        """Scale-aware scheduling: always run key roles; sample workers."""
+        w = self.world
+        pop = w.config.get("population") or {}
+        worker_sample = float(pop.get("worker_daily_sample", 1.0))
+        key_roles = {
+            "entrepreneur",
+            "vc",
+            "trader",
+            "journalist",
+            "banker",
+            "lawyer",
+            "economist",
+            "politician",
+        }
+        ids: list[str] = []
+        workers: list[str] = []
+        for aid, a in w.agents.items():
+            if not getattr(a, "alive", True):
+                continue
+            if a.role in key_roles:
+                ids.append(aid)
+            elif a.role == "worker":
+                workers.append(aid)
+            else:
+                ids.append(aid)
+        if worker_sample >= 0.999:
+            ids.extend(workers)
+        else:
+            # deterministic sample by tick
+            k = max(1, int(len(workers) * worker_sample))
+            # rotate window
+            if workers:
+                start = (w.tick * 7) % len(workers)
+                ordered = workers[start:] + workers[:start]
+                ids.extend(ordered[:k])
+                # always include unemployed so they can apply
+                for wid in workers:
+                    if not w.agents[wid].employer_company_id and wid not in ids:
+                        ids.append(wid)
+        return sorted(set(ids))
+
     def _run_one_tick(self) -> None:
         w = self.world
         w.metrics["production_units_today"] = 0
@@ -70,17 +130,26 @@ class SimulationOrchestrator:
 
         # Morning
         w.process_health()
+        process_lifecycle(w)
 
-        # Action window — stable order by id
-        for agent_id in sorted(w.agents.keys()):
+        # Action window
+        for agent_id in self._active_agents_today():
             agent = w.agents[agent_id]
+            if not getattr(agent, "alive", True):
+                continue
             actions = self.runtime.decide(w, agent)
             self.runtime.execute(w, agent, actions)
 
         # Market / firm operations
         w.authority.run_payroll_and_production()
+        collect_simple_tax(w)
+        pay_unemployment_benefits(w)
         w.authority.sell_goods_simple()
         w.authority.clear_equity_markets()
+
+        # Policy
+        apply_fed_taylor_step(w)
+        run_election_if_due(w)
 
         # EOD
         w.tick += 1
