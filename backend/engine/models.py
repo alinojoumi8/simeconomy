@@ -76,20 +76,32 @@ class Agent:
     founded_company_id: Optional[str] = None
     cash_account_id: str = ""
     memories: list[MemoryItem] = field(default_factory=list)
+    reflections: list[MemoryItem] = field(default_factory=list)
     goals: list[str] = field(default_factory=list)
+    last_reflection_tick: int = -999
+    opinion_economy: float = 0.0  # -1..1 from news/experience
+    company_name_pref: str = ""
 
     def is_working_today(self) -> bool:
         return self.health == HealthStatus.HEALTHY and self.employer_company_id is not None
 
     def remember(self, tick: int, content: str, importance: float = 0.5, kind: str = "episodic") -> None:
         self.memories.append(MemoryItem(tick=tick, content=content, importance=importance, kind=kind))
-        if len(self.memories) > 200:
-            self.memories = self.memories[-200:]
+        if len(self.memories) > 300:
+            self.memories = self.memories[-300:]
+
+    def reflect(self, tick: int, content: str, importance: float = 0.8) -> None:
+        item = MemoryItem(tick=tick, content=content, importance=importance, kind="reflection")
+        self.reflections.append(item)
+        self.memories.append(item)
+        self.last_reflection_tick = tick
+        if len(self.reflections) > 50:
+            self.reflections = self.reflections[-50:]
 
     def recent_memories(self, k: int = 8) -> list[MemoryItem]:
         scored = sorted(
             self.memories,
-            key=lambda m: (m.tick * 0.01 + m.importance),
+            key=lambda m: (m.tick * 0.01 + m.importance + (0.2 if m.kind == "reflection" else 0.0)),
             reverse=True,
         )
         return scored[:k]
@@ -110,6 +122,10 @@ class Agent:
             "skills": self.persona.skills,
             "goals": self.goals,
             "memory_count": len(self.memories),
+            "reflection_count": len(self.reflections),
+            "opinion_economy": self.opinion_economy,
+            "last_reflection_tick": self.last_reflection_tick,
+            "latest_reflection": self.reflections[-1].content if self.reflections else None,
         }
 
 
@@ -158,6 +174,12 @@ class Company:
     inventory_units: int = 0
     product_price_cents: int = 5000
     daily_productivity_per_worker: int = 2
+    sector: str = "tech"
+    shares_authorized: int = 1_000_000
+    shares_issued: int = 0
+    listed_symbol: Optional[str] = None
+    vc_raised_cents: int = 0
+    stage: str = "seed"  # idea | seed | growth | public
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -168,7 +190,31 @@ class Company:
             "status": self.status.value,
             "inventory_units": self.inventory_units,
             "product_price_cents": self.product_price_cents,
+            "sector": self.sector,
+            "shares_authorized": self.shares_authorized,
+            "shares_issued": self.shares_issued,
+            "listed_symbol": self.listed_symbol,
+            "vc_raised_cents": self.vc_raised_cents,
+            "stage": self.stage,
         }
+
+
+@dataclass
+class VCDeal:
+    id: str
+    tick: int
+    company_id: str
+    founder_id: str
+    vc_agent_id: str
+    amount_cents: int
+    equity_shares: int
+    status: str  # pitched | funded | rejected
+    pitch_note: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["amount_usd"] = round(self.amount_cents / 100.0, 2)
+        return d
 
 
 @dataclass

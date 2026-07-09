@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config" / "baseline_csus.yaml"
 FRONTEND = ROOT / "frontend"
 
-app = FastAPI(title="SimEconomy", version="0.1.0", description="Multi-agent economic simulator")
+app = FastAPI(
+    title="SimEconomy",
+    version="0.2.0",
+    description="Multi-agent economic simulator — Phase 1",
+)
 orch = SimulationOrchestrator(CONFIG, use_llm=False)
 
 # live websocket clients
@@ -68,7 +72,7 @@ class AutoBody(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "version": "0.2.0", "phase": "1"}
 
 
 @app.get("/state")
@@ -92,6 +96,7 @@ def get_agent(agent_id: str) -> dict[str, Any]:
         **a.to_public_dict(),
         "cash_cents": w.ledger.get(a.cash_account_id).balance_cents,
         "memories": [m.to_dict() for m in a.memories[-30:]],
+        "reflections": [m.to_dict() for m in a.reflections[-10:]],
     }
 
 
@@ -108,6 +113,21 @@ def events(limit: int = 100) -> list[dict[str, Any]]:
 @app.get("/news")
 def news(limit: int = 50) -> list[dict[str, Any]]:
     return [n.to_dict() for n in orch.world.news[-limit:]]
+
+
+@app.get("/market")
+def market() -> dict[str, Any]:
+    return orch.world.market.book_snapshot()
+
+
+@app.get("/vc")
+def vc_deals() -> list[dict[str, Any]]:
+    return [d.to_dict() for d in orch.world.vc_deals.values()]
+
+
+@app.get("/metrics/history")
+def metrics_history(limit: int = 90) -> list[dict[str, Any]]:
+    return orch.world.metrics_history[-limit:]
 
 
 @app.post("/pause")
@@ -157,7 +177,6 @@ async def ws_endpoint(ws: WebSocket) -> None:
     try:
         await ws.send_text(json.dumps({"kind": "hello", "state": orch.state()["metrics"]}))
         while True:
-            # keep alive; client may send pings
             await ws.receive_text()
     except WebSocketDisconnect:
         pass

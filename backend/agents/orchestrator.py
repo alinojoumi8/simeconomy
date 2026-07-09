@@ -65,6 +65,8 @@ class SimulationOrchestrator:
         w.metrics["production_units_today"] = 0
         w.metrics["sales_today"] = 0
         w.metrics["sales_cents_today"] = 0
+        w.metrics["trades_today"] = 0
+        w.metrics["trade_notional_cents_today"] = 0
 
         # Morning
         w.process_health()
@@ -78,6 +80,7 @@ class SimulationOrchestrator:
         # Market / firm operations
         w.authority.run_payroll_and_production()
         w.authority.sell_goods_simple()
+        w.authority.clear_equity_markets()
 
         # EOD
         w.tick += 1

@@ -63,3 +63,10 @@ def test_fourteen_day_rule_sim():
     # founder path should produce a company under rule policy
     assert state["metrics"]["companies"] >= 1
     assert state["metrics"]["news_count"] >= 1
+
+
+def test_reflections_generated():
+    orch = SimulationOrchestrator(CONFIG, seed=42, use_llm=False)
+    orch.step(10)
+    reflected = [a for a in orch.world.agents.values() if a.reflections]
+    assert len(reflected) >= 3

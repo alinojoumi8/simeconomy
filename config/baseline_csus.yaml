@@ -1,36 +1,56 @@
-# Calibrated Synthetic US-like baseline (CS-US) — Phase 0
-name: csus_phase0
+# Calibrated Synthetic US-like baseline (CS-US) — Phase 1
+name: csus_phase1
+phase: "1"
 seed: 42
 tick_unit: day
 currency: USD
 
 policy:
-  policy_rate_bps: 450          # 4.50%
-  illness_rate: 0.04            # daily chance healthy -> sick
+  policy_rate_bps: 450
+  illness_rate: 0.03
   sick_days_min: 1
   sick_days_max: 3
   max_loan_to_endowment: 3.0
-  bank_reserve_loan_cap: 0.5    # fraction of bank cash lendable
-  incorporation_fee_cents: 50000  # $500 to lawyer
-  min_wage_cents_day: 12000       # $120/day ~ $15/hr * 8
+  bank_reserve_loan_cap: 0.5
+  incorporation_fee_cents: 50000
+  min_wage_cents_day: 12000
+  vc_equity_pct: 0.15
+  reflection_interval_days: 5
 
 endowments_cents:
-  entrepreneur: 5000000         # $50,000
+  entrepreneur: 5000000
   lawyer: 3000000
   banker: 4000000
   worker: 1500000
   journalist: 2000000
-  bank_capital: 500000000       # $5,000,000
+  vc: 8000000
+  trader: 6000000
+  economist: 2500000
+  politician: 3000000
+  bank_capital: 500000000
+  vc_capital: 1000000000      # $10M fund
   fed_settlement: 0
 
 agents:
+  # founders
   - id: alice
     name: Alice Chen
     role: entrepreneur
     occupation: founder
+    company_name: Northstar Labs
     political_lean: center
     risk_tolerance: 0.75
     skills: {business: 80, sales: 70, coding: 40}
+  - id: grace
+    name: Grace Okoro
+    role: entrepreneur
+    occupation: founder
+    company_name: Horizon Energy
+    political_lean: center-right
+    risk_tolerance: 0.7
+    skills: {business: 75, energy: 80, ops: 60}
+
+  # professional services
   - id: bob
     name: Bob Okonkwo
     role: lawyer
@@ -45,6 +65,59 @@ agents:
     political_lean: center-right
     risk_tolerance: 0.3
     skills: {finance: 85, credit: 80}
+  - id: ivy
+    name: Ivy Patel
+    role: vc
+    occupation: partner
+    political_lean: center
+    risk_tolerance: 0.65
+    skills: {venture: 88, diligence: 80}
+  - id: jake
+    name: Jake Morales
+    role: trader
+    occupation: equity_trader
+    political_lean: center
+    risk_tolerance: 0.8
+    skills: {trading: 90, analysis: 75}
+  - id: kate
+    name: Kate Berg
+    role: trader
+    occupation: market_maker
+    political_lean: center-right
+    risk_tolerance: 0.7
+    skills: {trading: 85, liquidity: 80}
+
+  # media / research / politics
+  - id: frank
+    name: Frank Nguyen
+    role: journalist
+    occupation: reporter
+    political_lean: left
+    risk_tolerance: 0.55
+    skills: {writing: 88, investigation: 70}
+  - id: nina
+    name: Nina Schwartz
+    role: journalist
+    occupation: markets_reporter
+    political_lean: center
+    risk_tolerance: 0.5
+    skills: {writing: 82, markets: 78}
+  - id: omar
+    name: Omar Haddad
+    role: economist
+    occupation: macro_economist
+    political_lean: center-left
+    risk_tolerance: 0.4
+    skills: {economics: 92, statistics: 85}
+  - id: pam
+    name: Pam Torres
+    role: politician
+    occupation: city_council
+    political_lean: left
+    risk_tolerance: 0.45
+    skills: {policy: 80, rhetoric: 75}
+
+  # workers (labor pool)
   - id: dave
     name: Dave Singh
     role: worker
@@ -59,13 +132,90 @@ agents:
     political_lean: center
     risk_tolerance: 0.45
     skills: {ops: 75, logistics: 70}
-  - id: frank
-    name: Frank Nguyen
-    role: journalist
-    occupation: reporter
+  - id: helen
+    name: Helen Cho
+    role: worker
+    occupation: data_analyst
+    political_lean: left
+    risk_tolerance: 0.5
+    skills: {analysis: 80, coding: 70}
+  - id: ian
+    name: Ian Brooks
+    role: worker
+    occupation: sales
+    political_lean: center
+    risk_tolerance: 0.6
+    skills: {sales: 82, communication: 75}
+  - id: liam
+    name: Liam Costa
+    role: worker
+    occupation: technician
+    political_lean: center-right
+    risk_tolerance: 0.4
+    skills: {ops: 70, energy: 65}
+  - id: mia
+    name: Mia Rahman
+    role: worker
+    occupation: designer
     political_lean: left
     risk_tolerance: 0.55
-    skills: {writing: 88, investigation: 70}
+    skills: {design: 85, product: 70}
+  - id: noah
+    name: Noah Klein
+    role: worker
+    occupation: accountant
+    political_lean: center
+    risk_tolerance: 0.35
+    skills: {accounting: 88, finance: 70}
+  - id: quinn
+    name: Quinn Avery
+    role: worker
+    occupation: warehouse
+    political_lean: center
+    risk_tolerance: 0.4
+    skills: {ops: 72, logistics: 78}
+  - id: rita
+    name: Rita Gomez
+    role: worker
+    occupation: customer_success
+    political_lean: center-left
+    risk_tolerance: 0.5
+    skills: {communication: 80, sales: 60}
+  - id: sam
+    name: Sam Liu
+    role: worker
+    occupation: devops
+    political_lean: left
+    risk_tolerance: 0.55
+    skills: {coding: 82, ops: 75}
+  - id: tara
+    name: Tara Jensen
+    role: worker
+    occupation: nurse
+    political_lean: left
+    risk_tolerance: 0.35
+    skills: {healthcare: 90, ops: 60}
+  - id: uli
+    name: Uli Novak
+    role: worker
+    occupation: driver
+    political_lean: center
+    risk_tolerance: 0.45
+    skills: {logistics: 80, ops: 65}
+  - id: vera
+    name: Vera Kim
+    role: worker
+    occupation: teacher
+    political_lean: left
+    risk_tolerance: 0.3
+    skills: {teaching: 88, writing: 70}
+  - id: will
+    name: Will Harper
+    role: worker
+    occupation: electrician
+    political_lean: center-right
+    risk_tolerance: 0.4
+    skills: {ops: 78, energy: 70}
 
 institutions:
   bank:
@@ -74,3 +224,6 @@ institutions:
   fed:
     id: fed
     name: Federal Reserve
+  vc:
+    id: apex_ventures
+    name: Apex Ventures

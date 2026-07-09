@@ -9,6 +9,7 @@ from typing import Any, Optional, Union
 import yaml
 
 from .ledger import Ledger, LedgerError
+from .markets import OrderBook, OrderSide
 from .models import (
     Agent,
     Company,
@@ -23,6 +24,7 @@ from .models import (
     Persona,
     Reject,
     ShockEvent,
+    VCDeal,
     new_id,
 )
 
@@ -77,12 +79,22 @@ class WorldAuthority:
 
         company_id = new_id("co_")
         cash_acc = w.ledger.create_account("company", company_id, f"{name} Cash", 0)
+        sector = "tech"
+        if "oil" in name.lower() or "energy" in name.lower():
+            sector = "energy"
+        elif "pay" in name.lower() or "bank" in name.lower():
+            sector = "fintech"
         company = Company(
             id=company_id,
             name=name,
             founder_id=founder_id,
             cash_account_id=cash_acc.id,
+            sector=sector,
+            shares_issued=800_000,
+            stage="seed",
         )
+        # Founder gets initial equity allocation (book entry; cash already paid fee)
+        w.market.add_shares(founder_id, f"PREIPO:{company_id}", 800_000)
         # Pay lawyer fee
         try:
             w.ledger.transfer(
@@ -348,7 +360,255 @@ class WorldAuthority:
         for a in w.agents.values():
             if a.id != author_id:
                 a.remember(w.tick, f"News: {headline}", importance=0.4 + abs(item.sentiment) * 0.3)
+                # opinion drift from news
+                a.opinion_economy = max(
+                    -1.0, min(1.0, a.opinion_economy * 0.9 + item.sentiment * 0.15)
+                )
         return {"ok": True, "news": item.to_dict()}
+
+    def pitch_to_vc(
+        self,
+        founder_id: str,
+        company_id: str,
+        amount_cents: int,
+        pitch_note: str = "",
+        vc_agent_id: Optional[str] = None,
+    ) -> Result:
+        w = self.w
+        if founder_id not in w.agents or company_id not in w.companies:
+            return Reject("unknown founder or company")
+        co = w.companies[company_id]
+        if co.founder_id != founder_id:
+            return Reject("only founder can pitch")
+        if amount_cents <= 0:
+            return Reject("invalid amount")
+        vc = None
+        if vc_agent_id and vc_agent_id in w.agents and w.agents[vc_agent_id].role == "vc":
+            vc = w.agents[vc_agent_id]
+        else:
+            vc = next((a for a in w.agents.values() if a.role == "vc"), None)
+        if not vc:
+            return Reject("no VC in world")
+
+        # equity: 15% of post-money authorized float for seed, shares from unissued
+        equity_pct = float(w.config.get("policy", {}).get("vc_equity_pct", 0.15))
+        equity_shares = int(co.shares_authorized * equity_pct)
+        remaining_room = co.shares_authorized - co.shares_issued
+        equity_shares = max(1, min(equity_shares, remaining_room)) if remaining_room > 0 else max(1, equity_shares // 4)
+
+        deal = VCDeal(
+            id=new_id("vc_"),
+            tick=w.tick,
+            company_id=company_id,
+            founder_id=founder_id,
+            vc_agent_id=vc.id,
+            amount_cents=amount_cents,
+            equity_shares=equity_shares,
+            status="pitched",
+            pitch_note=pitch_note[:500],
+        )
+        w.vc_deals[deal.id] = deal
+        w.emit("vc_pitch", f"{w.agents[founder_id].name} pitched {co.name} to {vc.name}", deal.to_dict())
+        founder = w.agents[founder_id]
+        founder.remember(w.tick, f"Pitched {co.name} to VC {vc.name} for ${amount_cents/100:.0f}", 0.85)
+        vc.remember(w.tick, f"Received pitch from {founder.name}: {pitch_note[:120]}", 0.7)
+        return {"ok": True, "deal": deal.to_dict()}
+
+    def decide_vc_deal(self, vc_agent_id: str, deal_id: str, approve: bool = True) -> Result:
+        w = self.w
+        if deal_id not in w.vc_deals:
+            return Reject("unknown deal")
+        deal = w.vc_deals[deal_id]
+        if deal.vc_agent_id != vc_agent_id:
+            return Reject("not your deal")
+        if deal.status != "pitched":
+            return Reject("deal not in pitched state")
+        if not approve:
+            deal.status = "rejected"
+            w.emit("vc_rejected", f"VC rejected deal {deal_id}", deal.to_dict())
+            return {"ok": True, "deal": deal.to_dict()}
+
+        vc = w.agents[vc_agent_id]
+        co = w.companies[deal.company_id]
+        vc_inst = w.institutions.get("vc")
+        # Fund from VC firm capital if present else VC personal cash
+        source_acc = vc_inst["cash_account_id"] if vc_inst else vc.cash_account_id
+        try:
+            w.ledger.transfer(
+                source_acc,
+                co.cash_account_id,
+                deal.amount_cents,
+                w.tick,
+                f"VC funding {co.name}",
+                ref=deal.id,
+            )
+        except LedgerError as e:
+            deal.status = "rejected"
+            return Reject(str(e))
+
+        # Issue equity to VC (convert preipo founder symbol if needed)
+        pre = f"PREIPO:{co.id}"
+        # Dilution model: issue new shares to VC
+        if co.shares_issued + deal.equity_shares <= co.shares_authorized:
+            co.shares_issued += deal.equity_shares
+        symbol = co.listed_symbol or pre
+        w.market.add_shares(vc_agent_id, symbol, deal.equity_shares)
+        co.vc_raised_cents += deal.amount_cents
+        co.stage = "growth" if co.vc_raised_cents > 0 else co.stage
+        deal.status = "funded"
+        w.emit(
+            "vc_funded",
+            f"VC funded {co.name} with ${deal.amount_cents/100:,.0f}",
+            deal.to_dict(),
+        )
+        w.agents[deal.founder_id].remember(
+            w.tick, f"Raised ${deal.amount_cents/100:.0f} VC for {co.name}", 0.95
+        )
+        vc.remember(w.tick, f"Funded {co.name}; received {deal.equity_shares} shares", 0.9)
+        return {"ok": True, "deal": deal.to_dict()}
+
+    def list_company(self, founder_id: str, company_id: str, symbol: str, ipo_price_cents: int = 1000) -> Result:
+        w = self.w
+        if company_id not in w.companies:
+            return Reject("unknown company")
+        co = w.companies[company_id]
+        if co.founder_id != founder_id:
+            return Reject("only founder can list")
+        if co.listed_symbol:
+            return Reject("already listed")
+        symbol = symbol.upper().replace(" ", "")[:8]
+        if not symbol:
+            return Reject("bad symbol")
+        if symbol in w.market.listings:
+            return Reject("symbol taken")
+        if co.stage not in ("growth", "seed") or co.shares_issued < 1000:
+            # allow seed list for Phase 1 demo after any capital
+            pass
+        float_shares = min(200_000, max(10_000, co.shares_issued // 5))
+        # Move founder PREIPO holdings to listed symbol
+        pre = f"PREIPO:{co.id}"
+        founder_pre = w.market.get_holding(founder_id, pre)
+        if founder_pre > 0:
+            w.market.set_holding(founder_id, pre, 0)
+            w.market.add_shares(founder_id, symbol, founder_pre)
+        # any other PREIPO holders
+        for (aid, sym), qty in list(w.market.holdings.items()):
+            if sym == pre and qty > 0:
+                w.market.set_holding(aid, pre, 0)
+                w.market.add_shares(aid, symbol, qty)
+
+        from .markets import Listing
+
+        listing = Listing(
+            symbol=symbol,
+            company_id=co.id,
+            shares_outstanding=co.shares_issued,
+            last_price_cents=ipo_price_cents,
+            listed_tick=w.tick,
+            float_shares=float_shares,
+        )
+        w.market.listings[symbol] = listing
+        co.listed_symbol = symbol
+        co.stage = "public"
+        # Founder posts initial sell of part of float to seed market
+        seed_sell = min(float_shares // 2, w.market.get_holding(founder_id, symbol))
+        if seed_sell > 0:
+            w.market.place(w.tick, founder_id, symbol, OrderSide.SELL, seed_sell, ipo_price_cents)
+        w.emit(
+            "ipo",
+            f"{co.name} listed as {symbol} @ ${ipo_price_cents/100:.2f}",
+            listing.to_dict(),
+        )
+        w.agents[founder_id].remember(w.tick, f"Listed {co.name} as {symbol}", 0.95)
+        return {"ok": True, "listing": listing.to_dict()}
+
+    def place_order(
+        self,
+        agent_id: str,
+        symbol: str,
+        side: str,
+        qty: int,
+        price_cents: int,
+    ) -> Result:
+        w = self.w
+        if agent_id not in w.agents:
+            return Reject("unknown agent")
+        if symbol not in w.market.listings:
+            return Reject("unknown symbol")
+        if qty <= 0 or price_cents <= 0:
+            return Reject("invalid qty/price")
+        side_e = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+        if side_e == OrderSide.SELL:
+            held = w.market.get_holding(agent_id, symbol)
+            # count open sell residual
+            open_sell = sum(
+                o.qty - o.filled_qty
+                for o in w.market.open_orders(symbol)
+                if o.agent_id == agent_id and o.side == OrderSide.SELL
+            )
+            if held - open_sell < qty:
+                return Reject("insufficient shares")
+        else:
+            # soft cash check
+            need = qty * price_cents
+            cash = w.ledger.get(w.agents[agent_id].cash_account_id).balance_cents
+            if cash < need:
+                return Reject("insufficient cash for buy order")
+        order = w.market.place(w.tick, agent_id, symbol, side_e, qty, price_cents)
+        w.emit("order", f"{agent_id} {side} {qty} {symbol} @ {price_cents}", order.to_dict())
+        return {"ok": True, "order": order.to_dict()}
+
+    def clear_equity_markets(self) -> list[dict[str, Any]]:
+        """Match orders and settle cash + shares. Money conserved."""
+        w = self.w
+        trades = w.market.match_all(w.tick)
+        settled = []
+        for t in trades:
+            buyer = w.agents.get(t.buyer_id)
+            seller = w.agents.get(t.seller_id)
+            if not buyer or not seller:
+                continue
+            notional = t.price_cents * t.qty
+            try:
+                w.ledger.transfer(
+                    buyer.cash_account_id,
+                    seller.cash_account_id,
+                    notional,
+                    w.tick,
+                    f"Trade {t.symbol} x{t.qty}",
+                    ref=t.id,
+                )
+            except LedgerError as e:
+                w.emit("trade_fail", f"Settle failed {t.id}: {e}", t.to_dict())
+                continue
+            # share transfer
+            if w.market.get_holding(t.seller_id, t.symbol) < t.qty:
+                # rollback cash
+                try:
+                    w.ledger.transfer(
+                        seller.cash_account_id,
+                        buyer.cash_account_id,
+                        notional,
+                        w.tick,
+                        f"Rollback trade {t.id}",
+                        ref=t.id,
+                    )
+                except LedgerError:
+                    pass
+                continue
+            w.market.add_shares(t.seller_id, t.symbol, -t.qty)
+            w.market.add_shares(t.buyer_id, t.symbol, t.qty)
+            settled.append(t.to_dict())
+            w.emit(
+                "trade",
+                f"{t.qty} {t.symbol} @ ${t.price_cents/100:.2f}",
+                t.to_dict(),
+            )
+            w.metrics["trades_today"] = w.metrics.get("trades_today", 0) + 1
+            w.metrics["trade_notional_cents_today"] = (
+                w.metrics.get("trade_notional_cents_today", 0) + notional
+            )
+        return settled
 
     def inject_shock(self, shock_type: str, params: Optional[dict[str, Any]] = None) -> Result:
         w = self.w
@@ -417,6 +677,8 @@ class World:
         self.news: list[NewsItem] = []
         self.events: list[Event] = []
         self.shocks: list[ShockEvent] = []
+        self.vc_deals: dict[str, VCDeal] = {}
+        self.market = OrderBook()
         self.institutions: dict[str, dict[str, Any]] = {}
         self.metrics: dict[str, Any] = {}
         self.metrics_history: list[dict[str, Any]] = []
@@ -478,6 +740,33 @@ class World:
             "cash_account_id": fed_cash.id,
         }
 
+        # VC firm capital pool
+        vc_cfg = cfg.get("institutions", {}).get("vc")
+        if vc_cfg:
+            vc_cash = self.ledger.create_account(
+                "institution",
+                vc_cfg["id"],
+                f"{vc_cfg['name']} Fund",
+                int(endowments.get("vc_capital", 50_000_000)),
+            )
+            self.institutions["vc"] = {
+                "id": vc_cfg["id"],
+                "name": vc_cfg["name"],
+                "cash_account_id": vc_cash.id,
+            }
+
+        role_goals = {
+            "entrepreneur": ["found a company", "raise capital", "hire talent", "grow revenue", "consider IPO"],
+            "worker": ["find a good job", "earn wages", "stay healthy", "maybe invest savings"],
+            "journalist": ["report on the economy", "publish daily news", "cover markets & VC"],
+            "lawyer": ["help clients incorporate", "earn fees"],
+            "banker": ["underwrite sound loans", "protect bank capital"],
+            "vc": ["source deals", "fund winners", "build portfolio"],
+            "trader": ["trade listed equities", "manage risk", "react to news"],
+            "economist": ["track macro indicators", "advise research notes"],
+            "politician": ["read public mood", "comment on policy"],
+        }
+
         for adef in cfg.get("agents", []):
             role = adef["role"]
             end_key = role if role in endowments else "worker"
@@ -499,17 +788,9 @@ class World:
                 role=role,
                 persona=persona,
                 cash_account_id=cash.id,
+                company_name_pref=str(adef.get("company_name", "")),
             )
-            if role == "entrepreneur":
-                agent.goals = ["found a company", "raise capital", "hire talent", "grow revenue"]
-            elif role == "worker":
-                agent.goals = ["find a good job", "earn wages", "stay healthy"]
-            elif role == "journalist":
-                agent.goals = ["report on the economy", "publish daily news"]
-            elif role == "lawyer":
-                agent.goals = ["help clients incorporate", "earn fees"]
-            elif role == "banker":
-                agent.goals = ["underwrite sound loans", "protect bank capital"]
+            agent.goals = list(role_goals.get(role, ["survive", "prosper"]))
             self.agents[agent.id] = agent
 
         self.ledger.freeze_initial_sum()
@@ -554,6 +835,14 @@ class World:
             self.ledger.get(c.cash_account_id).balance_cents for c in self.companies.values()
         )
         inventory = sum(c.inventory_units for c in self.companies.values())
+        vc_funded = sum(1 for d in self.vc_deals.values() if d.status == "funded")
+        listings = list(self.market.listings.values())
+        index = 0
+        if listings:
+            index = int(sum(L.last_price_cents for L in listings) / len(listings))
+        avg_opinion = 0.0
+        if self.agents:
+            avg_opinion = sum(a.opinion_economy for a in self.agents.values()) / len(self.agents)
         m = {
             "tick": self.tick,
             "seed": self.seed,
@@ -573,6 +862,14 @@ class World:
             "production_units_today": self.metrics.get("production_units_today", 0),
             "sales_today": self.metrics.get("sales_today", 0),
             "sales_cents_today": self.metrics.get("sales_cents_today", 0),
+            "agent_count": len(self.agents),
+            "vc_deals": len(self.vc_deals),
+            "vc_funded": vc_funded,
+            "listings": len(listings),
+            "equity_index_cents": index,
+            "trades_today": self.metrics.get("trades_today", 0),
+            "trade_notional_cents_today": self.metrics.get("trade_notional_cents_today", 0),
+            "avg_opinion_economy": round(avg_opinion, 3),
         }
         self.metrics = m
         self.metrics_history.append(dict(m))
@@ -586,11 +883,21 @@ class World:
             "tick": self.tick,
             "paused": self.paused,
             "seed": self.seed,
+            "phase": self.config.get("phase", "1"),
             "metrics": self.metrics,
-            "agents": [a.to_public_dict() | {"cash_cents": self.ledger.get(a.cash_account_id).balance_cents} for a in self.agents.values()],
-            "companies": [c.to_dict() | {"cash_cents": self.ledger.get(c.cash_account_id).balance_cents} for c in self.companies.values()],
+            "agents": [
+                a.to_public_dict()
+                | {"cash_cents": self.ledger.get(a.cash_account_id).balance_cents}
+                for a in self.agents.values()
+            ],
+            "companies": [
+                c.to_dict() | {"cash_cents": self.ledger.get(c.cash_account_id).balance_cents}
+                for c in self.companies.values()
+            ],
             "loans": [l.to_dict() for l in self.loans.values()],
             "jobs": [j.to_dict() for j in self.job_postings.values()],
+            "vc_deals": [d.to_dict() for d in self.vc_deals.values()],
+            "market": self.market.book_snapshot(),
             "accounts": self.ledger.balances_public(),
             "news": [n.to_dict() for n in self.news[-50:]],
             "events": [e.to_dict() for e in self.events[-100:]],

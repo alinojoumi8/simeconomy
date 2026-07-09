@@ -32,5 +32,5 @@ def test_overdraft_rejected():
 def test_world_seed_balanced():
     w = World.from_config_path(CONFIG, seed=1)
     w.assert_invariants()
-    assert len(w.agents) == 6
+    assert len(w.agents) >= 20
     assert w.ledger.total_money() > 0

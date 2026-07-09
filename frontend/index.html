@@ -10,7 +10,7 @@
   <header class="top">
     <div>
       <h1>SimEconomy</h1>
-      <p class="sub">LLM multi-agent economic simulator · Phase 0</p>
+      <p class="sub">Phase 1 · multi-agent economy · VC · equities · memory</p>
     </div>
     <div class="status" id="statusPill">Day 0 · paused</div>
   </header>
@@ -18,6 +18,7 @@
   <section class="controls">
     <button id="btnStep1">Step 1 day</button>
     <button id="btnStep7">Step 7 days</button>
+    <button id="btnStep30">Step 30 days</button>
     <button id="btnAuto">Auto-run</button>
     <button id="btnStop">Pause / stop</button>
     <button id="btnReset" class="danger">Reset</button>
@@ -33,24 +34,34 @@
 
   <main class="grid">
     <section class="panel">
-      <h2>Agents</h2>
+      <h2>Agents <span class="muted" id="agentCount"></span></h2>
       <div class="table-wrap">
         <table id="agentsTable">
           <thead>
             <tr>
-              <th>Name</th><th>Role</th><th>Health</th><th>Employer</th><th>Cash</th>
+              <th>Name</th><th>Role</th><th>Health</th><th>Opinion</th><th>Cash</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
+      <h3>Agent inspector</h3>
+      <select id="agentSelect"></select>
+      <div id="agentDetail" class="item muted">Select an agent</div>
     </section>
 
     <section class="panel">
-      <h2>Companies &amp; jobs</h2>
+      <h2>Companies, VC &amp; jobs</h2>
       <div id="companies"></div>
+      <h3>VC deals</h3>
+      <div id="vcDeals"></div>
       <h3>Open jobs</h3>
       <div id="jobs"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Equity market</h2>
+      <div id="market"></div>
     </section>
 
     <section class="panel">
@@ -58,7 +69,7 @@
       <div id="news" class="feed"></div>
     </section>
 
-    <section class="panel">
+    <section class="panel" style="grid-column: 1 / -1">
       <h2>Event log</h2>
       <div id="events" class="feed"></div>
     </section>

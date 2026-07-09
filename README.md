@@ -1,8 +1,10 @@
 # SimEconomy
 
-**Multi-agent LLM economic simulator** — custom core.
+**Version:** 0.2.0 (Phase 1)
 
-AI agents with personas, memory, health, and goals interact through banks, companies, labor markets, media, and (later) markets and government. All money and legal state is owned by a deterministic **World Authority**; LLMs only propose actions.
+Multi-agent LLM economic simulator — **custom core**.
+
+AI agents with personas, **memory/reflection**, health, and goals interact through banks, companies, **VC**, **equity markets**, labor markets, and media. All money and legal state is owned by a deterministic **World Authority**; LLMs only propose actions.
 
 - **PRD:** [docs/PRD.md](docs/PRD.md)
 - **Technical specs:** [docs/SPECS.md](docs/SPECS.md)
@@ -20,8 +22,8 @@ pip install -r requirements.txt
 # Run tests (no API keys required)
 pytest -q
 
-# Seed + simulate 14 days headless
-python scripts/seed_and_run.py --days 14
+# Seed + simulate 30 days headless
+python scripts/seed_and_run.py --days 30
 
 # API + dashboard
 uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
@@ -41,20 +43,18 @@ export LOCAL_LLM_MODEL=qwen2.5:7b
 
 Without keys, agents use the built-in **rule policy** (fully runnable demo).
 
-## Phase 0 scope
+## Phase 1 scope
 
-- Double-entry ledger (cents)
-- Commercial bank loans
-- Company formation + lawyer fee
-- Labor: post job / hire / payroll
-- Journalist + news feed
-- Sickness / absenteeism
-- Pause / resume / step / shock API
-- Minimal web dashboard
+- ~25 agents (founders, workers, VC, traders, journalists, economist, politician, …)
+- Generative-Agents-style episodic memory + periodic **reflection**
+- **VC pitch / fund** with equity issuance
+- **Equity order book** + IPO path + trade settlement
+- Opinion drift from news
+- Dashboard: agent inspector, VC deals, market panel, shocks
 
 ## Architecture (one line)
 
-`Agent Runtime (LLM|rules) → propose tools → World Authority → ledger/markets → metrics + dashboard`
+`RulePolicy | LLM → tool proposals → World Authority → ledger / VC / equities → metrics + dashboard`
 
 ## License
 
