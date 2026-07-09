@@ -1,0 +1,9 @@
+services:
+  simeconomy:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - SIMECONOMY_LLM_MODE=off
+    volumes:
+      - ./config:/app/config:ro

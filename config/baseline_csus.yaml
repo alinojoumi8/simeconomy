@@ -1,0 +1,76 @@
+# Calibrated Synthetic US-like baseline (CS-US) — Phase 0
+name: csus_phase0
+seed: 42
+tick_unit: day
+currency: USD
+
+policy:
+  policy_rate_bps: 450          # 4.50%
+  illness_rate: 0.04            # daily chance healthy -> sick
+  sick_days_min: 1
+  sick_days_max: 3
+  max_loan_to_endowment: 3.0
+  bank_reserve_loan_cap: 0.5    # fraction of bank cash lendable
+  incorporation_fee_cents: 50000  # $500 to lawyer
+  min_wage_cents_day: 12000       # $120/day ~ $15/hr * 8
+
+endowments_cents:
+  entrepreneur: 5000000         # $50,000
+  lawyer: 3000000
+  banker: 4000000
+  worker: 1500000
+  journalist: 2000000
+  bank_capital: 500000000       # $5,000,000
+  fed_settlement: 0
+
+agents:
+  - id: alice
+    name: Alice Chen
+    role: entrepreneur
+    occupation: founder
+    political_lean: center
+    risk_tolerance: 0.75
+    skills: {business: 80, sales: 70, coding: 40}
+  - id: bob
+    name: Bob Okonkwo
+    role: lawyer
+    occupation: corporate_lawyer
+    political_lean: center-left
+    risk_tolerance: 0.35
+    skills: {law: 90, negotiation: 75}
+  - id: carol
+    name: Carol Ruiz
+    role: banker
+    occupation: loan_officer
+    political_lean: center-right
+    risk_tolerance: 0.3
+    skills: {finance: 85, credit: 80}
+  - id: dave
+    name: Dave Singh
+    role: worker
+    occupation: software_engineer
+    political_lean: left
+    risk_tolerance: 0.5
+    skills: {coding: 85, product: 60}
+  - id: erin
+    name: Erin Walsh
+    role: worker
+    occupation: operations
+    political_lean: center
+    risk_tolerance: 0.45
+    skills: {ops: 75, logistics: 70}
+  - id: frank
+    name: Frank Nguyen
+    role: journalist
+    occupation: reporter
+    political_lean: left
+    risk_tolerance: 0.55
+    skills: {writing: 88, investigation: 70}
+
+institutions:
+  bank:
+    id: first_national
+    name: First National Bank
+  fed:
+    id: fed
+    name: Federal Reserve

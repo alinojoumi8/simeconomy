@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SimEconomy Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>SimEconomy</h1>
+      <p class="sub">LLM multi-agent economic simulator · Phase 0</p>
+    </div>
+    <div class="status" id="statusPill">Day 0 · paused</div>
+  </header>
+
+  <section class="controls">
+    <button id="btnStep1">Step 1 day</button>
+    <button id="btnStep7">Step 7 days</button>
+    <button id="btnAuto">Auto-run</button>
+    <button id="btnStop">Pause / stop</button>
+    <button id="btnReset" class="danger">Reset</button>
+    <select id="shockType">
+      <option value="rate_hike">Shock: rate hike +50bps</option>
+      <option value="rate_cut">Shock: rate cut -25bps</option>
+      <option value="illness_wave">Shock: illness wave</option>
+    </select>
+    <button id="btnShock">Inject shock</button>
+  </section>
+
+  <section class="cards" id="cards"></section>
+
+  <main class="grid">
+    <section class="panel">
+      <h2>Agents</h2>
+      <div class="table-wrap">
+        <table id="agentsTable">
+          <thead>
+            <tr>
+              <th>Name</th><th>Role</th><th>Health</th><th>Employer</th><th>Cash</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Companies &amp; jobs</h2>
+      <div id="companies"></div>
+      <h3>Open jobs</h3>
+      <div id="jobs"></div>
+    </section>
+
+    <section class="panel">
+      <h2>News</h2>
+      <div id="news" class="feed"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Event log</h2>
+      <div id="events" class="feed"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
